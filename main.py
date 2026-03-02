@@ -48,6 +48,7 @@ def init_state():
     st.session_state.setdefault("api_key", os.getenv("GOOGLE_API_KEY", ""))
     st.session_state.setdefault("favorites", [])
     st.session_state.setdefault("page", "Dados")
+    st.session_state.setdefault("global_prompt", "")
 
 
 def get_model():
@@ -90,6 +91,13 @@ def favorite_callback(img_bytes_or_b64, code, title, feedback_key: str):
 # ------------------------------------------------------------------
 
 def build_prompt(df: pd.DataFrame, user_prompt: str) -> str:
+    global_instructions = st.session_state.get("global_prompt", "").strip()
+    global_block = (
+        f"Instruções globais definidas pelo usuário: {global_instructions}\n\n"
+        if global_instructions
+        else ""
+    )
+
     dataset_info = f"""
         Dataset carregado (variável 'df' do tipo pandas.DataFrame):
         - Colunas: {list(df.columns)}
@@ -105,6 +113,7 @@ def build_prompt(df: pd.DataFrame, user_prompt: str) -> str:
     return f"""
         Você é um especialista em visualização de dados com Python e Matplotlib.
 
+        {global_block}
         {dataset_info}
 
         Solicitação do usuário: {user_prompt}
@@ -344,13 +353,23 @@ def page_config():
     st.subheader("⚙️ Configurações da Aplicação")
     st.write("Informe sua chave de API do Google Gemini (válida apenas para esta sessão).")
     new_key = st.text_input("GOOGLE_API_KEY", type="password", value=st.session_state.api_key or "")
-
     if st.button("Salvar chave de API"):
         st.session_state.api_key = new_key.strip()
         if st.session_state.api_key:
             st.success("Chave de API salva para esta sessão.")
         else:
             st.warning("Chave vazia. Configure uma chave válida para usar o chat.")
+
+    st.write("Prompt global (será enviado antes de cada solicitação ao LLM).")
+    global_prompt = st.text_area(
+        "Prompt global",
+        value=st.session_state.global_prompt or "",
+        placeholder="Ex.: Sempre use títulos claros e cores acessíveis...",
+        height=120,
+    )
+    if st.button("Salvar prompt global"):
+        st.session_state.global_prompt = global_prompt.strip()
+        st.success("Prompt global salvo para esta sessão.")
 
     st.info("Opcional: defina GOOGLE_API_KEY no arquivo .env antes de iniciar o app.")
 
