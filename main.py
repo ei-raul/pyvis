@@ -6,6 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import google.generativeai as genai
 from dotenv import load_dotenv
+from utils import get_python_environment_info, get_today_date_now
 
 
 # ------------------------------------------------------------------
@@ -97,6 +98,8 @@ def build_prompt(df: pd.DataFrame, user_prompt: str) -> str:
         if global_instructions
         else ""
     )
+    environment_info = get_python_environment_info()
+    today_date = get_today_date_now()
 
     dataset_info = f"""
         Dataset carregado (variável 'df' do tipo pandas.DataFrame):
@@ -114,6 +117,11 @@ def build_prompt(df: pd.DataFrame, user_prompt: str) -> str:
         Você é um especialista em visualização de dados com Python e Matplotlib.
 
         {global_block}
+        Data de hoje (obtida via datetime.now()): {today_date}
+
+        Ambiente Python disponível para execução do código:
+        {environment_info}
+
         {dataset_info}
 
         Solicitação do usuário: {user_prompt}
