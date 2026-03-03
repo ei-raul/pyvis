@@ -1,12 +1,10 @@
 import os
 import base64
-import io
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 import google.generativeai as genai
 from dotenv import load_dotenv
-from utils import get_python_environment_info, get_today_date_now
+from utils import get_python_environment_info, get_today_date_now, execute_code_in_e2b
 
 
 # ------------------------------------------------------------------
@@ -165,11 +163,11 @@ def clean_code(raw: str) -> str:
 
 
 def execute_code(code: str, df: pd.DataFrame):
-    namespace = {"df": df, "pd": pd, "plt": plt, "io": io, "BytesIO": io.BytesIO}
-    exec(code, namespace)
-    if "img_buffer" not in namespace:
-        return None
-    return namespace["img_buffer"].getvalue()
+    return execute_code_in_e2b(
+        code,
+        df,
+        timeout_seconds=90,
+    )
 
 
 def show_dataset_preview(df: pd.DataFrame, name: str | None):
