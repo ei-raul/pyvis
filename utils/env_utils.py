@@ -60,3 +60,4 @@ def get_python_environment_info(max_packages: int = 120) -> str:
 
 def get_today_date_now() -> str:
     return datetime.now().strftime("%Y-%m-%d")
+
