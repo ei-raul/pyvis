@@ -2,13 +2,15 @@ import os
 import base64
 import streamlit as st
 import pandas as pd
+import plotly.io as pio
 import google.generativeai as genai
 from dotenv import load_dotenv
 from utils import (
     CodeSandboxExecutor,
     E2BSandboxExecutor,
-    get_python_environment_info,
-    get_today_date_now,
+    MatplotlibVisualizationPromptBuilder,
+    PlotlyVisualizationPromptBuilder,
+    VisualizationPromptBuilder,
 )
 
 
@@ -38,6 +40,10 @@ def inject_styles():
 
 CHAT_IMAGE_WIDTH = 420  # só controla exibição; download mantém resolução
 sandbox_executor: CodeSandboxExecutor = E2BSandboxExecutor()
+prompt_builders: dict[str, VisualizationPromptBuilder] = {
+    "Imagem (Matplotlib)": MatplotlibVisualizationPromptBuilder(),
+    "Interativa (Plotly)": PlotlyVisualizationPromptBuilder(),
+}
 
 
 # ------------------------------------------------------------------
@@ -54,6 +60,7 @@ def init_state():
     st.session_state.setdefault("favorites", [])
     st.session_state.setdefault("page", "Dados")
     st.session_state.setdefault("global_prompt", "")
+    st.session_state.setdefault("viz_mode", "Imagem (Matplotlib)")
 
 
 def get_model():
@@ -69,11 +76,20 @@ def get_model():
 # Favoritos
 # ------------------------------------------------------------------
 
-def add_favorite(img_bytes: bytes, code: str | None, title: str):
+def add_favorite(
+    img_bytes: bytes,
+    code: str | None,
+    title: str,
+    *,
+    plotly_json: str | None = None,
+    viz_mode: str = "Imagem (Matplotlib)",
+):
     fav = {
         "title": title or "Visualização",
         "image": base64.b64encode(img_bytes).decode(),
         "code": code,
+        "plotly_json": plotly_json,
+        "viz_mode": viz_mode,
     }
     if fav not in st.session_state.favorites:
         st.session_state.favorites.append(fav)
@@ -81,13 +97,26 @@ def add_favorite(img_bytes: bytes, code: str | None, title: str):
     return False
 
 
-def favorite_callback(img_bytes_or_b64, code, title, feedback_key: str):
+def favorite_callback(
+    img_bytes_or_b64,
+    code,
+    title,
+    feedback_key: str,
+    plotly_json: str | None = None,
+    viz_mode: str = "Imagem (Matplotlib)",
+):
     img_bytes = (
         base64.b64decode(img_bytes_or_b64)
         if isinstance(img_bytes_or_b64, str)
         else img_bytes_or_b64
     )
-    added = add_favorite(img_bytes, code, title)
+    added = add_favorite(
+        img_bytes,
+        code,
+        title,
+        plotly_json=plotly_json,
+        viz_mode=viz_mode,
+    )
     st.session_state[feedback_key] = "added" if added else "exists"
 
 
@@ -95,66 +124,13 @@ def favorite_callback(img_bytes_or_b64, code, title, feedback_key: str):
 # Utilidades de visualização/código
 # ------------------------------------------------------------------
 
-def build_prompt(df: pd.DataFrame, user_prompt: str) -> str:
-    global_instructions = st.session_state.get("global_prompt", "").strip()
-    global_block = (
-        f"Instruções globais definidas pelo usuário: {global_instructions}\n\n"
-        if global_instructions
-        else ""
+def build_prompt(df: pd.DataFrame, user_prompt: str, viz_mode: str) -> str:
+    prompt_builder = prompt_builders[viz_mode]
+    return prompt_builder.build_prompt(
+        df,
+        user_prompt,
+        global_instructions=st.session_state.get("global_prompt", ""),
     )
-    environment_info = get_python_environment_info()
-    today_date = get_today_date_now()
-
-    dataset_info = f"""
-        Dataset carregado (variável 'df' do tipo pandas.DataFrame):
-        - Colunas: {list(df.columns)}
-        - Tipos de dados: {df.dtypes.to_dict()}
-        - Shape: {df.shape}
-        - Primeiras 10 linhas de exemplo do dataset:
-        {df.head(10).to_string()}
-
-        Estatísticas:
-        {df.describe().to_string()}
-    """
-
-    return f"""
-        Você é um especialista em visualização de dados com Python e Matplotlib.
-
-        {global_block}
-        Data de hoje (obtida via datetime.now()): {today_date}
-
-        Ambiente Python disponível para execução do código:
-        {environment_info}
-
-        {dataset_info}
-
-        Solicitação do usuário: {user_prompt}
-
-        Gere um código Python completo que:
-        1. Use o DataFrame 'df' que já está carregado. Não crie outro DataFrame do zero, nem modifique a variável 'df'.
-        Você pode criar outro DataFrame a partir do 'df' para realizar operações sem alterar os dados;
-        2. Crie a visualização solicitada usando matplotlib;
-        3. Salve a figura em um objeto BytesIO chamado 'img_buffer' em formato PNG;
-        4. Use plt.tight_layout() para melhor aparência;
-        5. Não use plt.show().
-
-        Retorne APENAS o código Python, sem explicações, sem markdown, sem ```python. Apenas o código puro.
-        O código deve começar com 'import matplotlib.pyplot as plt' e terminar salvando em img_buffer.
-
-        Exemplo de estrutura:
-        import matplotlib.pyplot as plt
-        import io
-
-        # Seu código de visualização aqui
-        fig, ax = plt.subplots(figsize=(10, 6))
-        # ... código do gráfico ...
-
-        plt.tight_layout()
-        img_buffer = io.BytesIO()
-        plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
-        img_buffer.seek(0)
-        plt.close()
-    """
 
 
 def clean_code(raw: str) -> str:
@@ -168,12 +144,21 @@ def clean_code(raw: str) -> str:
     return code.strip()
 
 
-def execute_code(code: str, df: pd.DataFrame):
-    return sandbox_executor.execute(
+def execute_visualization(code: str, df: pd.DataFrame, viz_mode: str):
+    if viz_mode == "Interativa (Plotly)":
+        plotly_json, plotly_image = sandbox_executor.execute_plotly(
+            code,
+            df,
+            timeout_seconds=90,
+        )
+        return {"plotly_json": plotly_json, "image": plotly_image}
+
+    image_bytes = sandbox_executor.execute(
         code,
         df,
         timeout_seconds=90,
     )
+    return {"image": image_bytes}
 
 
 def show_dataset_preview(df: pd.DataFrame, name: str | None):
@@ -262,6 +247,9 @@ def page_dados():
 def render_message(message: dict, idx: int):
     with st.chat_message(message["role"]):
         st.write(message["content"])
+        if message["role"] == "assistant" and "plotly_json" in message:
+            figure = pio.from_json(message["plotly_json"])
+            st.plotly_chart(figure, use_container_width=True)
         if message["role"] == "assistant" and "image" in message:
             img_bytes = base64.b64decode(message["image"])
             st.image(img_bytes, width=CHAT_IMAGE_WIDTH)
@@ -277,7 +265,14 @@ def render_message(message: dict, idx: int):
                 "⭐ Favoritar",
                 key=f"fav_{idx}",
                 on_click=favorite_callback,
-                args=(message["image"], message.get("code"), message.get("title"), feedback_key),
+                args=(
+                    message["image"],
+                    message.get("code"),
+                    message.get("title"),
+                    feedback_key,
+                    message.get("plotly_json"),
+                    message.get("viz_mode", "Imagem (Matplotlib)"),
+                ),
             )
             if st.session_state.get(feedback_key) == "added":
                 st.success("Adicionada aos favoritos!")
@@ -290,6 +285,11 @@ def render_message(message: dict, idx: int):
 
 def page_chat():
     st.subheader("💬 Chat de Visualizações")
+    st.selectbox(
+        "Tipo de visualização",
+        options=list(prompt_builders.keys()),
+        key="viz_mode",
+    )
 
     # Histórico
     for idx, message in enumerate(st.session_state.messages):
@@ -315,16 +315,26 @@ def page_chat():
         with st.spinner("Gerando visualização com Gemini..."):
             try:
                 df = st.session_state.df
-                prompt = build_prompt(df, user_prompt)
+                viz_mode = st.session_state.viz_mode
+                prompt = build_prompt(df, user_prompt, viz_mode)
                 response = model.generate_content(prompt)
                 code = clean_code(response.text)
 
-                namespace_img = execute_code(code, df)
-                if namespace_img is None:
-                    st.error("❌ O código não gerou a variável 'img_buffer' esperada")
-                    return
-
+                result = execute_visualization(code, df, viz_mode)
                 st.write("Aqui está sua visualização:")
+                assistant_payload = {
+                    "role": "assistant",
+                    "content": "Visualização gerada!",
+                    "title": user_prompt,
+                    "code": code,
+                    "viz_mode": viz_mode,
+                }
+                if "plotly_json" in result:
+                    figure = pio.from_json(result["plotly_json"])
+                    st.plotly_chart(figure, use_container_width=True)
+                    assistant_payload["plotly_json"] = result["plotly_json"]
+
+                namespace_img = result["image"]
                 st.image(namespace_img, width=CHAT_IMAGE_WIDTH)
                 st.download_button(
                     label="⬇️ Baixar visualização",
@@ -336,27 +346,27 @@ def page_chat():
                 feedback_key = "fav_feedback_new"
                 st.button(
                     "⭐ Favoritar",
-                    key="fav_new",
+                    key=f"fav_new_{viz_mode}",
                     on_click=favorite_callback,
-                    args=(namespace_img, code, user_prompt, feedback_key),
+                    args=(
+                        namespace_img,
+                        code,
+                        user_prompt,
+                        feedback_key,
+                        result.get("plotly_json"),
+                        viz_mode,
+                    ),
                 )
                 if st.session_state.get(feedback_key) == "added":
                     st.success("Adicionada aos favoritos!")
                 elif st.session_state.get(feedback_key) == "exists":
                     st.info("Já estava nos favoritos.")
+                assistant_payload["image"] = base64.b64encode(namespace_img).decode()
 
                 with st.expander("Ver código"):
                     st.code(code, language="python")
 
-                st.session_state.messages.append(
-                    {
-                        "role": "assistant",
-                        "content": "Visualização gerada!",
-                        "title": user_prompt,
-                        "code": code,
-                        "image": base64.b64encode(namespace_img).decode(),
-                    }
-                )
+                st.session_state.messages.append(assistant_payload)
             except Exception as e:
                 st.error(f"❌ Erro ao gerar ou executar o código: {str(e)}")
 
@@ -396,9 +406,12 @@ def page_favoritos():
     for i, fav in enumerate(st.session_state.favorites):
         col = cols[i % 3]
         with col:
+            if fav.get("plotly_json"):
+                figure = pio.from_json(fav["plotly_json"])
+                st.plotly_chart(figure, use_container_width=True)
             img_bytes = base64.b64decode(fav["image"])
             st.image(img_bytes, use_container_width=True)
-            st.caption(fav.get("title") or f"Favorito {i+1}")
+            st.caption(f"{fav.get('title') or f'Favorito {i+1}'} ({fav.get('viz_mode', 'Imagem (Matplotlib)')})")
             st.download_button(
                 label="⬇️ Baixar",
                 data=img_bytes,
