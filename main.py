@@ -5,8 +5,7 @@ import pandas as pd
 import google.generativeai as genai
 from dotenv import load_dotenv
 from utils import (
-    CodeSandboxExecutor,
-    E2BSandboxExecutor,
+    get_sandbox_executor,
     get_python_environment_info,
     get_today_date_now,
 )
@@ -37,7 +36,6 @@ def inject_styles():
 
 
 CHAT_IMAGE_WIDTH = 420  # só controla exibição; download mantém resolução
-sandbox_executor: CodeSandboxExecutor = E2BSandboxExecutor()
 
 
 # ------------------------------------------------------------------
@@ -54,6 +52,7 @@ def init_state():
     st.session_state.setdefault("favorites", [])
     st.session_state.setdefault("page", "Dados")
     st.session_state.setdefault("global_prompt", "")
+    st.session_state.setdefault("sandbox_type", "docker")
 
 
 def get_model():
@@ -168,8 +167,9 @@ def clean_code(raw: str) -> str:
     return code.strip()
 
 
-def execute_code(code: str, df: pd.DataFrame):
-    return sandbox_executor.execute(
+def execute_code(code: str, df: pd.DataFrame, sandbox_type: str):
+    executor = get_sandbox_executor(sandbox_type.lower().strip())
+    return executor.execute(
         code,
         df,
         timeout_seconds=90,
@@ -319,7 +319,7 @@ def page_chat():
                 response = model.generate_content(prompt)
                 code = clean_code(response.text)
 
-                namespace_img = execute_code(code, df)
+                namespace_img = execute_code(code, df, st.session_state.sandbox_type)
                 if namespace_img is None:
                     st.error("❌ O código não gerou a variável 'img_buffer' esperada")
                     return
@@ -363,6 +363,22 @@ def page_chat():
 
 def page_config():
     st.subheader("⚙️ Configurações da Aplicação")
+    sandbox_label = st.selectbox(
+        "Sandbox de execução",
+        options=["docker", "e2b"],
+        format_func=lambda value: "Docker (local)" if value == "docker" else "E2B (remota)",
+        index=0 if st.session_state.sandbox_type == "docker" else 1,
+    )
+    st.session_state.sandbox_type = sandbox_label
+    if st.session_state.sandbox_type == "docker":
+        st.caption(
+            "Modo Docker requer imagem local da sandbox. "
+            "Build: `docker build -t pyvis-sandbox:latest docker/sandbox`"
+        )
+    else:
+        st.caption("Modo E2B requer `E2B_API_KEY` configurada.")
+
+    st.markdown("---")
     st.write("Informe sua chave de API do Google Gemini (válida apenas para esta sessão).")
     new_key = st.text_input("GOOGLE_API_KEY", type="password", value=st.session_state.api_key or "")
     if st.button("Salvar chave de API"):

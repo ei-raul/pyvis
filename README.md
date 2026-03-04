@@ -5,6 +5,7 @@ Aplicação Streamlit em formato de chat que cria visualizações de dados com G
 ## Requisitos
 
 - Python 3.13+
+- Docker Engine (para sandbox local Docker)
 - Chave da API do Google Gemini (`GOOGLE_API_KEY`)
 - Dependências listadas em `pyproject.toml`
 
@@ -32,6 +33,10 @@ Aplicação Streamlit em formato de chat que cria visualizações de dados com G
 4) Configure a chave da API:
    - Crie um `.env` com `GOOGLE_API_KEY=suachave`
    - ou informe a chave na página **Configurações** dentro do app.
+5) (Opcional, recomendado) Prepare a imagem da sandbox Docker:
+   ```bash
+   docker build -t pyvis-sandbox:latest docker/sandbox
+   ```
 
 ## Execução
 
@@ -59,14 +64,17 @@ O Streamlit abrirá em `http://localhost:8501`.
    - Cada favorito traz um “Ver código” com o script gerado.
 
 4. **Configurações**  
+   - Escolha a sandbox de execução: `Docker (local)` ou `E2B (remota)`.  
    - Defina/atualize a `GOOGLE_API_KEY` apenas para a sessão atual (útil se não quiser escrever no `.env`).
 
 ## Notas de implementação
 
 - Modelo usado: `gemini-2.5-pro` via `google-generativeai`.
+- Sandbox padrão por sessão: `Docker`.
+- O modo Docker executa com restrições de segurança (`--network none`, `--read-only`, limites de CPU/memória/PIDs, sem capabilities extras).
 - As imagens são exibidas menores no chat (largura ~420px) para dar espaço à conversa; o download mantém a resolução completa.
 - Favoritos evitam duplicatas exatas (imagem + título + código).
-- O app salva estado em `st.session_state` (dataset, mensagens, favoritos, chave de API), preservando enquanto a sessão estiver ativa.
+- O app salva estado em `st.session_state` (dataset, mensagens, favoritos, chave de API, sandbox), preservando enquanto a sessão estiver ativa.
 
 ## Possíveis ajustes
 
@@ -77,10 +85,11 @@ O Streamlit abrirá em `http://localhost:8501`.
 ## Solução de problemas
 
 - **“Chave API não encontrada”**: crie `.env` com `GOOGLE_API_KEY` ou informe na página **Configurações**.  
+- **“Imagem Docker não encontrada”**: rode `docker build -t pyvis-sandbox:latest docker/sandbox`.  
+- **“Docker daemon indisponível”**: inicie o serviço do Docker (ex.: Docker Desktop ou `systemctl start docker`).  
 - **Erro de execução do código gerado**: revise o CSV (tipos/colunas) ou veja o código no “Ver código” e ajuste o prompt.  
 - **Favoritos não atualizam**: se remover/alterar e nada acontecer, recarregue a página (o app já força rerun em remoções).
 
 ## Licença
 
 Não definida; adicione a que preferir (ex.: MIT) se for distribuir.
-
