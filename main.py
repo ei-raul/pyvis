@@ -38,6 +38,7 @@ def inject_styles():
 
 CHAT_IMAGE_WIDTH = 420  # só controla exibição; download mantém resolução
 sandbox_executor: CodeSandboxExecutor = E2BSandboxExecutor()
+DEFAULT_DATASET_PATH = "data/data.csv"
 
 
 # ------------------------------------------------------------------
@@ -54,6 +55,29 @@ def init_state():
     st.session_state.setdefault("favorites", [])
     st.session_state.setdefault("page", "Dados")
     st.session_state.setdefault("global_prompt", "")
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+
+
+def is_data_upload_enabled() -> bool:
+    return _env_flag("ALLOW_DATA_UPLOAD", default=True)
+
+
+def ensure_default_dataset_loaded():
+    if is_data_upload_enabled() or st.session_state.df is not None:
+        return
+
+    try:
+        df = pd.read_csv(DEFAULT_DATASET_PATH, quotechar='"', sep=";")
+        st.session_state.df = df
+        st.session_state.dataset_name = DEFAULT_DATASET_PATH
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar dataset padrão ({DEFAULT_DATASET_PATH}): {str(e)}")
 
 
 def get_model():
@@ -241,22 +265,31 @@ def render_sidebar():
 # ------------------------------------------------------------------
 
 def page_dados():
+    allow_upload = is_data_upload_enabled()
     st.subheader("📁 Upload e Visualização do CSV")
-    uploaded_file = st.file_uploader("Carregue seu arquivo CSV", type=["csv"])
 
-    if uploaded_file is not None:
-        try:
-            df = pd.read_csv(uploaded_file)
-            st.session_state.df = df
-            st.session_state.dataset_name = uploaded_file.name
-            st.success(f"✅ Arquivo carregado: {uploaded_file.name} ({len(df)} linhas, {len(df.columns)} colunas)")
-            show_dataset_preview(df, uploaded_file.name)
-        except Exception as e:
-            st.error(f"❌ Erro ao carregar arquivo: {str(e)}")
-    elif st.session_state.df is not None:
+    if allow_upload:
+        uploaded_file = st.file_uploader("Carregue seu arquivo CSV", type=["csv"])
+
+        if uploaded_file is not None:
+            try:
+                df = pd.read_csv(uploaded_file)
+                st.session_state.df = df
+                st.session_state.dataset_name = uploaded_file.name
+                st.success(f"✅ Arquivo carregado: {uploaded_file.name} ({len(df)} linhas, {len(df.columns)} colunas)")
+                show_dataset_preview(df, uploaded_file.name)
+            except Exception as e:
+                st.error(f"❌ Erro ao carregar arquivo: {str(e)}")
+        elif st.session_state.df is not None:
+            show_dataset_preview(st.session_state.df, st.session_state.dataset_name)
+        else:
+            st.info("Envie um CSV para habilitar o chat de visualização.")
+        return
+
+    ensure_default_dataset_loaded()
+    st.info(f"Upload de CSV desabilitado. Dataset padrão em uso: `{DEFAULT_DATASET_PATH}`.")
+    if st.session_state.df is not None:
         show_dataset_preview(st.session_state.df, st.session_state.dataset_name)
-    else:
-        st.info("Envie um CSV para habilitar o chat de visualização.")
 
 
 def render_message(message: dict, idx: int):
@@ -425,6 +458,7 @@ def main():
 
     inject_styles()
     init_state()
+    ensure_default_dataset_loaded()
     render_sidebar()
 
     if st.session_state.page == "Dados":
