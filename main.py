@@ -2,7 +2,7 @@ import os
 import base64
 import streamlit as st
 import pandas as pd
-import google.generativeai as genai
+from langchain_google_genai import ChatGoogleGenerativeAI 
 from dotenv import load_dotenv
 from utils import (
     CodeSandboxExecutor,
@@ -90,8 +90,10 @@ def get_model():
     if not api_key:
         st.warning("Defina a chave de API na página Configurações.")
         return None
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel("gemini-2.5-pro")
+    return ChatGoogleGenerativeAI(
+        model="gemini-2.5-pro",
+        google_api_key=api_key,
+    )
 
 
 # ------------------------------------------------------------------
@@ -363,8 +365,8 @@ def page_chat():
             try:
                 df = st.session_state.df
                 prompt = build_prompt(df, user_prompt)
-                response = model.generate_content(prompt)
-                code = clean_code(response.text)
+                response = model.invoke(prompt)
+                code = clean_code(response.text())
 
                 namespace_img = execute_code(code, df)
                 if namespace_img is None:
