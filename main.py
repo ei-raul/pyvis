@@ -171,19 +171,13 @@ def build_prompt(df: pd.DataFrame, user_prompt: str) -> str:
         O código deve começar com 'import matplotlib.pyplot as plt' e terminar salvando em img_buffer.
 
         Utilize os seguintes comandos para padronizar as visualizações:
+        ```python
         plt.rcParams['figure.figsize'] = [10.0, 8.0]
         plt.rcParams['figure.dpi'] = 360
         plt.rcParams['font.size'] = 20
         sns.set_theme(style="whitegrid") 
         plt.rcParams["axes.prop_cycle"] = plt.cycler(color=plt.cm.tab10.colors)
-
-        Utilize as seguintes cores:
-        main_colors = {
-            'blue-0': '#1F77B4',
-            'orange-0': '#FF7F0E',
-            'orange-1': '#B25809',
-            'orange-3': '#653205'
-        }
+        ```
 
         Exemplo de estrutura:
         import matplotlib.pyplot as plt
