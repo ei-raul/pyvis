@@ -274,6 +274,9 @@ def render_sidebar():
         "2. Abra **Chat de Visualização** para pedir gráficos.\n"
         "3. Em **Configurações**, defina a chave de API (opcional, se já estiver no .env)."
     )
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 👤 Criador do app")
+    st.sidebar.markdown("[Raul de Aráujo](https://ei-raul.github.io/)")
 
 
 # ------------------------------------------------------------------
