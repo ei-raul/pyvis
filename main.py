@@ -51,7 +51,12 @@ def init_state():
     st.session_state.setdefault("messages", [])
     st.session_state.setdefault("df", None)
     st.session_state.setdefault("dataset_name", None)
-    st.session_state.setdefault("api_key", os.getenv("GOOGLE_API_KEY", ""))
+    st.session_state.setdefault("api_key", "")
+    # Migração: versões antigas colocavam a chave do .env em session_state.api_key.
+    # Agora esse campo guarda apenas a chave inserida pelo usuário na UI.
+    env_api_key = (os.getenv("GOOGLE_API_KEY", "") or "").strip()
+    if env_api_key and st.session_state.api_key == env_api_key:
+        st.session_state.api_key = ""
     st.session_state.setdefault("favorites", [])
     st.session_state.setdefault("page", "Dados")
     st.session_state.setdefault("global_prompt", "")
@@ -81,7 +86,7 @@ def ensure_default_dataset_loaded():
 
 
 def get_model():
-    api_key = st.session_state.get("api_key")
+    api_key = (st.session_state.get("api_key") or "").strip() or (os.getenv("GOOGLE_API_KEY", "") or "").strip()
     if not api_key:
         st.warning("Defina a chave de API na página Configurações.")
         return None
@@ -164,6 +169,21 @@ def build_prompt(df: pd.DataFrame, user_prompt: str) -> str:
 
         Retorne APENAS o código Python, sem explicações, sem markdown, sem ```python. Apenas o código puro.
         O código deve começar com 'import matplotlib.pyplot as plt' e terminar salvando em img_buffer.
+
+        Utilize os seguintes comandos para padronizar as visualizações:
+        plt.rcParams['figure.figsize'] = [10.0, 8.0]
+        plt.rcParams['figure.dpi'] = 360
+        plt.rcParams['font.size'] = 20
+        sns.set_theme(style="whitegrid") 
+        plt.rcParams["axes.prop_cycle"] = plt.cycler(color=plt.cm.tab10.colors)
+
+        Utilize as seguintes cores:
+        main_colors = {
+            'blue-0': '#1F77B4',
+            'orange-0': '#FF7F0E',
+            'orange-1': '#B25809',
+            'orange-3': '#653205'
+        }
 
         Exemplo de estrutura:
         import matplotlib.pyplot as plt
@@ -402,6 +422,8 @@ def page_config():
         st.session_state.api_key = new_key.strip()
         if st.session_state.api_key:
             st.success("Chave de API salva para esta sessão.")
+        elif os.getenv("GOOGLE_API_KEY", "").strip():
+            st.info("Chave da sessão limpa. O app continuará usando a chave definida no .env.")
         else:
             st.warning("Chave vazia. Configure uma chave válida para usar o chat.")
 
