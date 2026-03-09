@@ -1,4 +1,5 @@
 import base64
+import io
 import os
 import re
 from typing import Protocol
@@ -63,3 +64,51 @@ class E2BSandboxExecutor:
             "import base64 as _base64\n"
             "print('__PYVIS_IMAGE_B64__' + _base64.b64encode(_img_bytes).decode('ascii'))\n"
         )
+
+
+class LocalPythonSandboxExecutor:
+    """Executor simples que roda código com exec() no mesmo processo."""
+
+    def execute(self, code: str, df: pd.DataFrame, *, timeout_seconds: int = 90) -> bytes:
+        del timeout_seconds  # não é aplicado no modo local síncrono
+
+        exec_globals = {
+            "__builtins__": __builtins__,
+            "__name__": "__main__",
+        }
+        exec_locals = {"df": df.copy()}
+
+        try:
+            exec(code, exec_globals, exec_locals)
+        except Exception as e:
+            raise RuntimeError(f"Erro ao executar código localmente: {type(e).__name__}: {e}") from e
+
+        if "img_buffer" not in exec_locals:
+            raise RuntimeError("O código não gerou a variável 'img_buffer'.")
+
+        img_buffer = exec_locals["img_buffer"]
+        if hasattr(img_buffer, "getvalue"):
+            img_bytes = img_buffer.getvalue()
+        elif isinstance(img_buffer, (bytes, bytearray)):
+            img_bytes = bytes(img_buffer)
+        elif isinstance(img_buffer, io.BytesIO):
+            img_bytes = img_buffer.getvalue()
+        else:
+            raise RuntimeError("'img_buffer' deve ser BytesIO ou bytes.")
+
+        if not img_bytes:
+            raise RuntimeError("'img_buffer' está vazio.")
+        return img_bytes
+
+
+def get_sandbox_executor() -> CodeSandboxExecutor:
+    """Factory de executor.
+
+    Controlado por SANDBOX_BACKEND:
+    - 'local' (padrão)
+    - 'e2b' 
+    """
+    backend = (os.getenv("SANDBOX_BACKEND") or "local").strip().lower()
+    if backend == "local":
+        return LocalPythonSandboxExecutor()
+    return E2BSandboxExecutor()

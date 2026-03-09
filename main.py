@@ -6,7 +6,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 from utils import (
     CodeSandboxExecutor,
-    E2BSandboxExecutor,
+    get_sandbox_executor,
     get_python_environment_info,
     get_today_date_now,
 )
@@ -37,7 +37,7 @@ def inject_styles():
 
 
 CHAT_IMAGE_WIDTH = 420  # só controla exibição; download mantém resolução
-sandbox_executor: CodeSandboxExecutor = E2BSandboxExecutor()
+sandbox_executor: CodeSandboxExecutor = get_sandbox_executor()
 DEFAULT_DATASET_PATH = "data/data.csv"
 
 
@@ -162,7 +162,7 @@ def build_prompt(df: pd.DataFrame, user_prompt: str) -> str:
         Gere um código Python completo que:
         1. Use o DataFrame 'df' que já está carregado. Não crie outro DataFrame do zero, nem modifique a variável 'df'.
         Você pode criar outro DataFrame a partir do 'df' para realizar operações sem alterar os dados;
-        2. Crie a visualização solicitada usando matplotlib;
+        2. Crie a visualização solicitada usando matplotlib e seaborn;
         3. Salve a figura em um objeto BytesIO chamado 'img_buffer' em formato PNG;
         4. Use plt.tight_layout() para melhor aparência;
         5. Não use plt.show().
