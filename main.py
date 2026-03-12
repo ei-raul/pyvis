@@ -2,6 +2,7 @@ import os
 import base64
 import streamlit as st
 import pandas as pd
+import streamlit_authenticator as stauth
 from langchain_google_genai import ChatGoogleGenerativeAI 
 from dotenv import load_dotenv
 from utils import (
@@ -39,6 +40,16 @@ def inject_styles():
 CHAT_IMAGE_WIDTH = 420  # só controla exibição; download mantém resolução
 sandbox_executor: CodeSandboxExecutor = get_sandbox_executor()
 DEFAULT_DATASET_PATH = "data/data.csv"
+APP_SESSION_KEYS = [
+    "history",
+    "messages",
+    "df",
+    "dataset_name",
+    "api_key",
+    "favorites",
+    "page",
+    "global_prompt",
+]
 
 
 # ------------------------------------------------------------------
@@ -60,6 +71,60 @@ def init_state():
     st.session_state.setdefault("favorites", [])
     st.session_state.setdefault("page", "Dados")
     st.session_state.setdefault("global_prompt", "")
+
+
+def clear_app_session_state():
+    for key in APP_SESSION_KEYS:
+        st.session_state.pop(key, None)
+
+
+def _build_authenticator():
+    username = (os.getenv("APP_USERNAME", "") or "").strip()
+    password = (os.getenv("APP_PASSWORD", "") or "").strip()
+    display_name = (os.getenv("APP_NAME", "") or "").strip() or username
+    cookie_name = (os.getenv("APP_AUTH_COOKIE_NAME", "") or "").strip() or "pyvis_auth_cookie"
+    cookie_key = (os.getenv("APP_AUTH_COOKIE_KEY", "") or "").strip() or "pyvis_auth_signature_key_change_me"
+    cookie_expiry_days = float((os.getenv("APP_AUTH_COOKIE_EXPIRY_DAYS", "") or "1").strip())
+
+    if not username or not password:
+        st.error("Defina APP_USERNAME e APP_PASSWORD no arquivo .env para habilitar o login.")
+        st.stop()
+
+    credentials = {
+        "usernames": {
+            username: {
+                "name": display_name,
+                "password": stauth.Hasher.hash(password),
+            }
+        }
+    }
+    return stauth.Authenticate(
+        credentials=credentials,
+        cookie_name=cookie_name,
+        key=cookie_key,
+        cookie_expiry_days=cookie_expiry_days,
+    )
+
+
+def require_authentication():
+    authenticator = _build_authenticator()
+    authenticator.login(location="main", key="Login")
+    name = st.session_state.get("name")
+    authentication_status = st.session_state.get("authentication_status")
+    username = st.session_state.get("username")
+
+    if authentication_status is False:
+        clear_app_session_state()
+        st.error("Usuário ou senha inválidos.")
+        st.stop()
+
+    if authentication_status is None:
+        clear_app_session_state()
+        st.info("Informe seu usuário e senha para acessar a aplicação.")
+        st.stop()
+
+    st.sidebar.success(f"Logado como: {name or username}")
+    authenticator.logout("Sair", "sidebar")
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -149,8 +214,8 @@ def build_prompt(df: pd.DataFrame, user_prompt: str) -> str:
     """
 
     return f"""
-        Você é um especialista em visualização de dados com Python e Matplotlib.
-
+        Você é um especialista em visualização de dados com Python, Matplotlib e Seaborn.
+        
         {global_block}
         Data de hoje (obtida via datetime.now()): {today_date}
 
@@ -159,12 +224,13 @@ def build_prompt(df: pd.DataFrame, user_prompt: str) -> str:
 
         {dataset_info}
 
-        Solicitação do usuário: {user_prompt}
+        ## Solicitação do usuário: {user_prompt}
 
+        ## Instruções de código:
         Gere um código Python completo que:
         1. Use o DataFrame 'df' que já está carregado. Não crie outro DataFrame do zero, nem modifique a variável 'df'.
         Você pode criar outro DataFrame a partir do 'df' para realizar operações sem alterar os dados;
-        2. Crie a visualização solicitada usando matplotlib e seaborn;
+        2. Crie a visualização solicitada usando matplotlib, seaborn e wordcloud;
         3. Salve a figura em um objeto BytesIO chamado 'img_buffer' em formato PNG;
         4. Use plt.tight_layout() para melhor aparência;
         5. Não use plt.show().
@@ -194,6 +260,16 @@ def build_prompt(df: pd.DataFrame, user_prompt: str) -> str:
         plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
         img_buffer.seek(0)
         plt.close()
+
+        ## Instruções sobre as visualizações que você irá criar:
+        1. Crie uma visualização que atenda bem à solicitação do usuário;
+        2. Opte por visualizações simples como: 
+            - gráficos de barras (bar charts), 
+            - histogramas (histograms), 
+            - gráficos de dispersão (scatter plot), 
+            - gráficos de pizza (pie charts) (somente se houverem poucas fatias, caso contrário opte por barras),
+            - gráficos de calor (heatmaps)
+        3. Se o usuário solicitar um tipo específico de gráfico, atenda-o;
     """
 
 
@@ -474,6 +550,8 @@ def page_favoritos():
 def main():
     load_dotenv()
     st.set_page_config(page_title="Gerador de Visualizações com IA", layout="wide")
+    require_authentication()
+
     st.title("🎨 Gerador de Visualizações de Dados com IA")
     st.markdown("Use o menu lateral para navegar entre Dados, Chat e Configurações.")
 

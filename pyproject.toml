@@ -17,5 +17,6 @@ dependencies = [
     "requests>=2.32.5",
     "seaborn>=0.13.2",
     "streamlit>=1.52.1",
+    "streamlit-authenticator>=0.4.2",
     "wordcloud>=1.9.6",
 ]
